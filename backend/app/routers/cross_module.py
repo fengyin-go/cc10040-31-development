@@ -255,6 +255,35 @@ def recalc_history(metric_name: str | None = None):
     return svc.get_recalc_history(metric_name)
 
 
+@router.get("/recalc/window-history")
+def recalc_window_history(
+    metric_name: str,
+    biz_date: str | None = None,
+    caliber_version: str | None = None,
+    result_status: str | None = None,
+    page: int = 1,
+    size: int = 20,
+):
+    """窗口重算沿革：按指标、口径和业务日期检索覆盖该日期的重算登记与差异明细。
+
+    筛选与翻页都限定在同一指标与窗口内；已确认结果和待执行任务分别标注，
+    后完成的补算不删除早期重算使用的源数据快照。
+    """
+    svc = RecalcEngineService()
+    result = svc.query_window_history(
+        metric_name=metric_name,
+        biz_date=biz_date,
+        caliber_version=caliber_version,
+        result_status=result_status,
+        page=page,
+        size=size,
+    )
+    if "error" in result:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=400, detail=result["error"])
+    return result
+
+
 @router.get("/recalc/{task_id}/estimate-impact")
 def estimate_recalc_impact(task_id: int):
     """预估算重算影响"""

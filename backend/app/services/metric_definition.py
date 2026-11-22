@@ -82,6 +82,7 @@ class MetricDefinitionService(BaseModuleService):
         """触发指标历史数据按新口径重算。
 
         跨模块数据流: metric_definition -> caliber_version -> recalc_engine
+        登记时由重算引擎固化本次请求的历史区间和版本依据。
         """
         metric = store.find(self.MODULE, entry_id)
         if metric is None:
@@ -90,24 +91,22 @@ class MetricDefinitionService(BaseModuleService):
         # 查找当前口径
         calibers = store.find_by_field("caliber_version", "所属指标", metric.get("指标名称", ""))
         active = [c for c in calibers if c.get("status") == "已生效"]
-
         old_version = active[0].get("版本号", "unknown") if active else "unknown"
 
-        # 创建重算任务
-        task_id = store.next_id("recalc_engine")
-        task = {
-            "id": task_id,
-            "关联指标": metric.get("指标名称", ""),
-            "新口径版本": new_caliber_version,
-            "历史时间范围": time_range,
-            "重算状态": "待调度",
-            "产出差异": "",
-            "status": "待调度",
-            "pending": True,
-            "abnormal": False,
-        }
-        store.rows("recalc_engine").append(task)
+        from app.services.recalc_engine import RecalcEngineService
+        task, registration, message = RecalcEngineService().register_recalc_task(
+            metric_name=str(metric.get("指标名称", "")),
+            new_caliber=new_caliber_version,
+            time_range=time_range,
+            old_caliber=str(old_version),
+        )
+        if task is None:
+            return None, message
 
-        record = store.record_recalc(entry_id, old_version, new_caliber_version,
-                                     time_range, "待重算后产生")
-        return task, f"已创建重算任务 #{task_id}"
+        store.record_recalc(
+            entry_id, str(old_version), new_caliber_version, time_range,
+            "待重算后产生", metric_name=str(metric.get("指标名称", "")),
+            registration_id=registration["id"] if registration else None,
+            status="待执行",
+        )
+        return task, message
